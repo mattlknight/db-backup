@@ -1,0 +1,8 @@
+title = "Sensitive Database Parameters"
+
+[database]
+host = "192.168.1.10"
+database = "postgres"
+username = "user"
+password = "password"
+schemas = ["mydb_schema_1", "mydb_schema_2"]
