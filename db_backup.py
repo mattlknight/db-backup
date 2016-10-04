@@ -39,7 +39,9 @@ def create_new_backup():
             schema, db['host'], db['database'], db['username'], filename_prefix + 'dump')
         # print(full_backup)
 
-        child = pexpect.spawn('%s'%(sql_backup))
+        child = pexpect.spawn('/bin/bash')
+        child.expect('#')
+        child.sendline(sql_backup)
         i = child.expect([pexpect.TIMEOUT, '[Pp]assword: '])
         if i == 0: # Timeout
             print('ERROR!')
@@ -47,8 +49,11 @@ def create_new_backup():
             print(child.before, child.after)
             sys.exit (1)
         child.sendline(db['password'])
+        child.expect('#')
 
-        child = pexpect.spawn('%s'%(full_backup))
+        child = pexpect.spawn('/bin/bash')
+        child.expect('#')
+        child.sendline(full_backup)
         i = child.expect([pexpect.TIMEOUT, '[Pp]assword: '])
         if i == 0: # Timeout
             print('ERROR!')
@@ -56,6 +61,7 @@ def create_new_backup():
             print(child.before, child.after)
             sys.exit (1)
         child.sendline(db['password'])
+        child.expect('#')
 
 
 def get_all_backups():
