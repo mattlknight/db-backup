@@ -3,56 +3,92 @@
 from time import time
 from datetime import datetime, timedelta
 from glob import glob
-import re
-import os
+import os, sys, re, toml, pexpect, shutil
 
-backup_dir = '/opt/backups/'
-backup_prefix = 'db_backup_'
-backup_suffix = '.pg.dump'
-file_age_limit = timedelta(days=31)
-file_count_limit = 100
+
+db_params_toml = './db_params.toml'
+backup_dir_prefix = '/opt/backups/db-backup_'
+backup_age_limit = timedelta(days=31)
+backup_count_limit = 100
 
 backup_files = dict()
+db = None
+
+
+def read_db_params():
+    global db
+    with open(db_params_toml, 'r') as f:
+        db = toml.loads(f.read())
+        db = db['database']
 
 
 def create_new_backup():
     now = '{}'.format(time())
+    for schema in db['schemas']:
+        backup_dir = backup_dir_prefix + now + '/'
+        filename_prefix = backup_dir + schema + '.'
 
-    filename = backup_dir + backup_prefix + now + backup_suffix
-    with open(filename, 'w') as f:
-        f.write('Sample data\n')
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+
+        sql_backup = 'pg_dump -n {} -s -h {} -d {} -U {} -W -f {}'.format( \
+            schema, db['host'], db['database'], db['username'], filename_prefix + 'sql')
+        # print(sql_backup)
+
+        full_backup = 'pg_dump -n {} -h {} -d {} -U {} -W -f {}'.format( \
+            schema, db['host'], db['database'], db['username'], filename_prefix + 'dump')
+        # print(full_backup)
+
+        child = pexpect.spawn('%s'%(sql_backup))
+        i = child.expect([pexpect.TIMEOUT, '[Pp]assword: '])
+        if i == 0: # Timeout
+            print('ERROR!')
+            print('pg_dump startup failed. Here is what pg_dump said:')
+            print(child.before, child.after)
+            sys.exit (1)
+        child.sendline(db['password'])
+
+        child = pexpect.spawn('%s'%(full_backup))
+        i = child.expect([pexpect.TIMEOUT, '[Pp]assword: '])
+        if i == 0: # Timeout
+            print('ERROR!')
+            print('pg_dump startup failed. Here is what pg_dump said:')
+            print(child.before, child.after)
+            sys.exit (1)
+        child.sendline(db['password'])
 
 
 def get_all_backups():
-    filenames = glob(backup_dir + backup_prefix + "*" + backup_suffix)
-    for filename in filenames:
-        pattern = '.*' + backup_prefix + '(\d+\.?\d+)' + backup_suffix
+    backup_dirs = glob(backup_dir_prefix + "*" + '/')
+    for backup_dir in backup_dirs:
+        pattern = '.*' + backup_dir_prefix + '(\d+\.?\d+)' + '/'
         prog = re.compile(pattern)
-        result = prog.match(filename)
+        result = prog.match(backup_dir)
         timestamp = result.group(1)
         timestamp = datetime.utcfromtimestamp(float(timestamp))
 
-        if filename not in backup_files:
-            backup_files[filename] = timestamp
+        if backup_dir not in backup_files:
+            backup_files[backup_dir] = timestamp
 
 
 def remove_old_backups():
-    num_files = len(backup_files)
-    for filename in sorted(backup_files):
-        timestamp = backup_files[filename]
+    num_backups = len(backup_files)
+    for backup_dir in sorted(backup_files):
+        timestamp = backup_files[backup_dir]
         now = datetime.utcnow()
         age = now - timestamp
-        if age >= file_age_limit:
-            print('Removing file [{}] older [{}] than limit [{}]'.format(filename, age, file_age_limit))
-            os.remove(filename)
-            num_files -= 1
-        elif num_files > file_count_limit:
-            print('Removing file [{}] due to quantity limit [{}]'.format(filename, file_count_limit))
-            os.remove(filename)
-            num_files -= 1
+        if age >= backup_age_limit:
+            print('Removing dir [{}] older [{}] than limit [{}]'.format(backup_dir, age, backup_age_limit))
+            shutil.rmtree(backup_dir)
+            num_backups -= 1
+        elif num_backups > backup_count_limit:
+            print('Removing dir [{}] due to quantity limit [{}]'.format(backup_dir, backup_count_limit))
+            shutil.rmtree(backup_dir)
+            num_backups -= 1
 
 
 def main():
+    read_db_params()
     create_new_backup()
     get_all_backups()
     remove_old_backups()

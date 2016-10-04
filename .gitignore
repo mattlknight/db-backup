@@ -1,3 +1,6 @@
+# Ignore sensitive db_params.toml file
+db_params.toml
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
